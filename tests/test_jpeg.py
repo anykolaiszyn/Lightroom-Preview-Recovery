@@ -15,7 +15,8 @@ def fake_jpeg(width: int, height: int, payload: bytes = b"x") -> bytes:
         + width.to_bytes(2, "big")
         + b"\x03\x01\x11\x00\x02\x11\x00\x03\x11\x00"
     )
-    return b"\xff\xd8" + sof + b"\xff\xda\x00\x08" + payload + b"\xff\xd9"
+    sos = b"\xff\xda\x00\x08\x01\x01\x00\x00\x3f\x00"
+    return b"\xff\xd8" + sof + sos + payload + b"\xff\xd9"
 
 
 def test_yields_complete_embedded_jpeg_streams() -> None:
@@ -32,6 +33,16 @@ def test_reads_dimensions_from_a_sof_marker() -> None:
     assert jpeg_dimensions(fake_jpeg(1280, 853)) == (1280, 853)
 
 
+def test_ignores_eoi_bytes_inside_metadata_segment() -> None:
+    jpeg = (
+        b"\xff\xd8"
+        + b"\xff\xe1\x00\x06ab\xff\xd9"
+        + fake_jpeg(1280, 853)[2:]
+    )
+
+    assert list(iter_jpeg_streams(b"header" + jpeg)) == [jpeg]
+
+
 def test_selects_largest_dimensions_before_byte_length() -> None:
     noisy_small = fake_jpeg(320, 200, b"x" * 500)
     concise_large = fake_jpeg(1280, 853, b"y")
@@ -40,6 +51,15 @@ def test_selects_largest_dimensions_before_byte_length() -> None:
 
     assert (result.width, result.height) == (1280, 853)
     assert result.data == concise_large
+
+
+def test_breaks_equal_pixel_count_ties_by_byte_length() -> None:
+    concise = fake_jpeg(640, 480, b"x")
+    detailed = fake_jpeg(640, 480, b"y" * 500)
+
+    result = select_largest_jpeg(concise + detailed)
+
+    assert result.data == detailed
 
 
 def test_rejects_record_without_complete_jpeg() -> None:

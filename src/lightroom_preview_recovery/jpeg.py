@@ -33,12 +33,63 @@ def iter_jpeg_streams(data: bytes) -> Iterator[bytes]:
         start = data.find(JPEG_START, position)
         if start < 0:
             return
-        end = data.find(JPEG_END, start + len(JPEG_START))
+        end = _jpeg_end(data, start)
         if end < 0:
-            return
-        end += len(JPEG_END)
+            position = start + len(JPEG_START)
+            continue
         yield data[start:end]
         position = end
+
+
+def _jpeg_end(data: bytes, start: int) -> int:
+    position = start + len(JPEG_START)
+    while position < len(data):
+        if data[position] != 0xFF:
+            return -1
+        while position < len(data) and data[position] == 0xFF:
+            position += 1
+        if position >= len(data):
+            return -1
+        marker = data[position]
+        position += 1
+        if marker == 0xD9:
+            return position
+        if marker in {0x01, 0xD8} or 0xD0 <= marker <= 0xD7:
+            continue
+        if position + 2 > len(data):
+            return -1
+        segment_length = int.from_bytes(data[position : position + 2], "big")
+        if segment_length < 2 or position + segment_length > len(data):
+            return -1
+        position += segment_length
+        if marker != 0xDA:
+            continue
+        position = _scan_entropy_data(data, position)
+        if position < 0:
+            return -1
+        if data[position - 2 : position] == JPEG_END:
+            return position
+    return -1
+
+
+def _scan_entropy_data(data: bytes, position: int) -> int:
+    while position < len(data):
+        if data[position] != 0xFF:
+            position += 1
+            continue
+        if position + 1 >= len(data):
+            return -1
+        marker = data[position + 1]
+        if marker == 0x00 or 0xD0 <= marker <= 0xD7:
+            position += 2
+            continue
+        if marker == 0xFF:
+            position += 1
+            continue
+        if marker == 0xD9:
+            return position + 2
+        return position
+    return -1
 
 
 def jpeg_dimensions(data: bytes) -> tuple[int, int]:
