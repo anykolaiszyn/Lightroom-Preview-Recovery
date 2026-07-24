@@ -255,21 +255,11 @@ class RecoveryCoordinator:
         ):
             return False
 
-        try:
-            metadata = resume.recovered_path.lstat()
-        except OSError:
-            return False
-        attributes = getattr(metadata, "st_file_attributes", 0)
-        reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
-        if (
-            stat.S_ISLNK(metadata.st_mode)
-            or attributes & reparse_flag
-            or not stat.S_ISREG(metadata.st_mode)
-        ):
-            return False
-
-        recovered_path = resume.recovered_path.resolve()
-        if not recovered_path.is_relative_to(output_root.resolve()):
+        recovered_path = self._safe_resume_path(
+            resume.recovered_path,
+            output_root,
+        )
+        if recovered_path is None:
             return False
         try:
             if recovered_path.stat().st_size != resume.byte_size:
@@ -278,6 +268,51 @@ class RecoveryCoordinator:
         except OSError:
             return False
         return digest == resume.sha256
+
+    @staticmethod
+    def _safe_resume_path(
+        recovered_path: Path,
+        output_root: Path,
+    ) -> Path | None:
+        lexical_root = output_root.absolute()
+        lexical_path = (
+            recovered_path
+            if recovered_path.is_absolute()
+            else recovered_path.absolute()
+        )
+        try:
+            relative = lexical_path.relative_to(lexical_root)
+        except ValueError:
+            return None
+        if ".." in relative.parts:
+            return None
+
+        components = [lexical_root]
+        current = lexical_root
+        for part in relative.parts:
+            current = current / part
+            components.append(current)
+
+        reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+        for position, component in enumerate(components):
+            try:
+                metadata = component.lstat()
+            except OSError:
+                return None
+            attributes = getattr(metadata, "st_file_attributes", 0)
+            if stat.S_ISLNK(metadata.st_mode) or attributes & reparse_flag:
+                return None
+            is_final = position == len(components) - 1
+            if is_final:
+                if not stat.S_ISREG(metadata.st_mode):
+                    return None
+            elif not stat.S_ISDIR(metadata.st_mode):
+                return None
+
+        resolved_path = lexical_path.resolve()
+        if not resolved_path.is_relative_to(output_root.resolve()):
+            return None
+        return resolved_path
 
     @staticmethod
     def _sha256_file(path: Path, cancel_event: threading.Event) -> str:

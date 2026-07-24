@@ -451,6 +451,39 @@ def test_resume_symlink_is_not_skipped(tmp_path: Path) -> None:
     assert summary.results[0].recovered_path not in {link, target, first_path}
 
 
+def test_resume_path_through_symlinked_parent_is_not_skipped(
+    tmp_path: Path,
+) -> None:
+    jpeg = fake_jpeg(80, 54)
+    config = _config(tmp_path, jpeg)
+    first = RecoveryCoordinator().run(config, Event(), lambda *_: None)
+    first_path = first.results[0].recovered_path
+    assert first_path is not None
+    target_parent = config.output_root / "resume-target"
+    target_parent.mkdir()
+    target = target_parent / "preview.jpg"
+    target.write_bytes(jpeg)
+    linked_parent = config.output_root / "resume-parent-link"
+    linked_parent.symlink_to(target_parent, target_is_directory=True)
+    linked_path = linked_parent / "preview.jpg"
+    _rewrite_latest_resume_path(
+        config.output_root / "recovery-report.csv",
+        linked_path,
+        len(jpeg),
+        hashlib.sha256(jpeg).hexdigest(),
+    )
+
+    summary = RecoveryCoordinator().run(config, Event(), lambda *_: None)
+
+    assert summary.recovered == 1
+    assert summary.skipped == 0
+    assert summary.results[0].recovered_path not in {
+        linked_path,
+        target,
+        first_path,
+    }
+
+
 def test_malformed_resume_rows_are_logged_without_blocking_recovery(
     tmp_path: Path,
 ) -> None:

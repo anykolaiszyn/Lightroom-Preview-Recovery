@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+import lightroom_preview_recovery.reports as reports
 from lightroom_preview_recovery.models import (
     RecoveryResult,
     RecoveryStatus,
@@ -238,6 +239,53 @@ def test_resume_index_retains_rows_before_malformed_trailing_csv(
     assert "malformed" in warnings[0].lower()
 
 
+def test_malformed_trailing_csv_is_quarantined_repaired_and_appendable(
+    tmp_path: Path,
+) -> None:
+    writer = ReportWriter(tmp_path)
+    first = make_result(tmp_path, preview_uuid="first", preview_digest="one")
+    writer.append(first)
+    original = writer.csv_path.read_bytes() + b'"unterminated trailing field'
+    writer.csv_path.write_bytes(original)
+    warnings: list[str] = []
+
+    first_index = load_resume_index(writer.csv_path, warnings.append)
+    second = make_result(
+        tmp_path,
+        preview_uuid="second",
+        preview_digest="two",
+        recovered_path=tmp_path / "Photos" / "second.jpg",
+    )
+    writer.append(second)
+    repaired_index = load_resume_index(writer.csv_path)
+
+    assert first_index == {"first:one": first}
+    assert repaired_index == {"first:one": first, "second:two": second}
+    quarantine_paths = list(tmp_path.glob("recovery-report.csv.*.corrupt"))
+    assert len(quarantine_paths) == 1
+    assert quarantine_paths[0].read_bytes() == original
+    assert str(quarantine_paths[0]) in warnings[0]
+    assert not list(tmp_path.glob("*.partial"))
+
+
+def test_row_conversion_warning_does_not_quarantine_resume_csv(
+    tmp_path: Path,
+) -> None:
+    writer = ReportWriter(tmp_path)
+    valid = make_result(tmp_path)
+    writer.append(valid)
+    with writer.csv_path.open("a", encoding="utf-8", newline="") as handle:
+        csv.writer(handle, lineterminator="\n").writerow(["invalid", "short"])
+    original = writer.csv_path.read_bytes()
+
+    assert load_resume_index(writer.csv_path, lambda _: None) == {
+        "abcd:deadbeef": valid
+    }
+
+    assert writer.csv_path.read_bytes() == original
+    assert not list(tmp_path.glob("*.corrupt"))
+
+
 def test_finalize_atomically_replaces_html_and_cleans_owned_temp(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -262,3 +310,30 @@ def test_finalize_atomically_replaces_html_and_cleans_owned_temp(
     assert not observed_temporary.exists()
     assert writer.html_path.read_text(encoding="utf-8").startswith("<!doctype html>")
     assert not list(tmp_path.glob("*.partial"))
+
+
+def test_append_closes_raw_descriptor_when_fdopen_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    writer = ReportWriter(tmp_path)
+    descriptor: int | None = None
+
+    def fail_fdopen(raw_descriptor: int, *_: object, **__: object) -> None:
+        nonlocal descriptor
+        descriptor = raw_descriptor
+        raise RuntimeError("fdopen failed")
+
+    monkeypatch.setattr(reports.os, "fdopen", fail_fdopen)
+
+    with pytest.raises(RuntimeError, match="fdopen failed"):
+        writer.log("message")
+
+    assert descriptor is not None
+    try:
+        with pytest.raises(OSError):
+            os.fstat(descriptor)
+    finally:
+        try:
+            os.close(descriptor)
+        except OSError:
+            pass

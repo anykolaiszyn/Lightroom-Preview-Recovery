@@ -171,21 +171,7 @@ class ReportWriter:
 
     def _row_for_result(self, result: RecoveryResult) -> dict[str, object]:
         recovered_path = self._reported_path(result.recovered_path)
-        return {
-            "image_id": result.image_id,
-            "preview_uuid": result.preview_uuid,
-            "preview_digest": result.preview_digest,
-            "original_filename": result.original_filename,
-            "original_folder": result.original_folder,
-            "recovered_path": recovered_path,
-            "width": result.width,
-            "height": result.height,
-            "byte_size": result.byte_size,
-            "sha256": result.sha256,
-            "mapping_status": result.mapping_status,
-            "status": result.status.value,
-            "message": result.message,
-        }
+        return _row_values(result, recovered_path)
 
     def _reported_path(self, recovered_path: Path | None) -> Path | None:
         if recovered_path is None:
@@ -214,6 +200,8 @@ def load_resume_index(
         return {}
 
     index: dict[str, RecoveryResult] = {}
+    valid_results: list[RecoveryResult] = []
+    syntax_error: str | None = None
     with csv_path.open(newline="", encoding="utf-8") as handle:
         reader = csv.DictReader(handle, strict=True)
         while True:
@@ -222,10 +210,9 @@ def load_resume_index(
             except StopIteration:
                 break
             except (csv.Error, UnicodeError) as error:
-                _warn(
-                    on_warning,
-                    f"Ignoring malformed trailing resume CSV near line "
-                    f"{reader.line_num}: {error}",
+                syntax_error = (
+                    f"malformed trailing resume CSV near line "
+                    f"{reader.line_num}: {error}"
                 )
                 break
             try:
@@ -237,7 +224,15 @@ def load_resume_index(
                     f"{reader.line_num}: {error}",
                 )
                 continue
+            valid_results.append(result)
             index[ReportWriter._resume_key(result.preview_uuid, result.preview_digest)] = result
+    if syntax_error is not None:
+        quarantine_path = _repair_resume_csv(csv_path, valid_results)
+        _warn(
+            on_warning,
+            f"Repaired {syntax_error}; corrupt original quarantined at "
+            f"{quarantine_path}",
+        )
     return index
 
 
@@ -269,6 +264,63 @@ def _result_from_row(row: dict[str, str | None]) -> RecoveryResult:
 def _warn(callback: WarningCallback | None, message: str) -> None:
     if callback is not None:
         callback(message)
+
+
+def _repair_resume_csv(
+    csv_path: Path,
+    valid_results: list[RecoveryResult],
+) -> Path:
+    quarantine_path = csv_path.with_name(
+        f"{csv_path.name}.{uuid4().hex}.corrupt"
+    )
+    with csv_path.open("rb") as source:
+        with quarantine_path.open("xb") as quarantine:
+            while chunk := source.read(1024 * 1024):
+                quarantine.write(chunk)
+            quarantine.flush()
+            os.fsync(quarantine.fileno())
+
+    temporary = csv_path.with_name(f".{csv_path.name}.{uuid4().hex}.partial")
+    created = False
+    try:
+        with temporary.open("x", encoding="utf-8", newline="") as handle:
+            created = True
+            writer = csv.DictWriter(
+                handle,
+                fieldnames=CSV_FIELDS,
+                lineterminator="\n",
+            )
+            writer.writeheader()
+            for result in valid_results:
+                writer.writerow(_row_values(result, result.recovered_path))
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, csv_path)
+    finally:
+        if created:
+            temporary.unlink(missing_ok=True)
+    return quarantine_path
+
+
+def _row_values(
+    result: RecoveryResult,
+    recovered_path: Path | None,
+) -> dict[str, object]:
+    return {
+        "image_id": result.image_id,
+        "preview_uuid": result.preview_uuid,
+        "preview_digest": result.preview_digest,
+        "original_filename": result.original_filename,
+        "original_folder": result.original_folder,
+        "recovered_path": recovered_path,
+        "width": result.width,
+        "height": result.height,
+        "byte_size": result.byte_size,
+        "sha256": result.sha256,
+        "mapping_status": result.mapping_status,
+        "status": result.status.value,
+        "message": result.message,
+    }
 
 
 def _optional_int(value: str | None) -> int | None:
@@ -306,12 +358,19 @@ class _AppendTarget:
             except BaseException:
                 os.close(descriptor)
                 raise
-        self._handle = os.fdopen(
-            descriptor,
-            "a",
-            encoding="utf-8",
-            newline=self._newline,
-        )
+        try:
+            self._handle = os.fdopen(
+                descriptor,
+                "a",
+                encoding="utf-8",
+                newline=self._newline,
+            )
+        except BaseException:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+            raise
         return self._handle
 
     def __exit__(
