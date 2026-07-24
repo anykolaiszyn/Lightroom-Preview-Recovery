@@ -13,6 +13,8 @@ RESERVED = {
     "CON", "PRN", "AUX", "NUL",
     *(f"COM{i}" for i in range(1, 10)),
     *(f"LPT{i}" for i in range(1, 10)),
+    "COM\u00b9", "COM\u00b2", "COM\u00b3",
+    "LPT\u00b9", "LPT\u00b2", "LPT\u00b3",
 }
 
 
@@ -87,13 +89,17 @@ def contained_path(root: Path, relative: Path) -> Path:
     return destination
 
 
-def collision_path(path: Path, occupied: Callable[[Path], bool]) -> Path:
+def collision_path(
+    path: Path,
+    occupied: Callable[[Path], bool],
+    max_chars: int = 239,
+) -> Path:
     """Return the first unoccupied numbered variant of *path*."""
     if not occupied(path):
         return path
     for number in range(2, 100_000):
         suffix = f" ({number}){path.suffix}"
-        available = 239 - _windows_units(str(path.parent)) - 1 - _windows_units(suffix)
+        available = max_chars - _windows_units(str(path.parent)) - 1 - _windows_units(suffix)
         if available < 1:
             raise OSError(f"selected output path is too long for {path.name}")
         stem = _truncate_utf16(path.stem, available)

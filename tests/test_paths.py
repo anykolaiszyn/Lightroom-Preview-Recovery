@@ -25,6 +25,8 @@ def test_sanitizes_windows_reserved_and_invalid_names() -> None:
         ("CON.txt", "_CON.txt"),
         ("LPT1.jpg", "_LPT1.jpg"),
         ("cOn.TxT", "_cOn.TxT"),
+        ("COM¹.txt", "_COM¹.txt"),
+        ("lPt³.JPG", "_lPt³.JPG"),
     ],
 )
 def test_sanitizes_windows_device_names_with_extensions(
@@ -74,12 +76,22 @@ def test_collision_path_uses_windows_case_insensitive_reservations(
     )
 
 
+def test_collision_path_honors_custom_windows_unit_limit(tmp_path: Path) -> None:
+    path = tmp_path / ("x" * 30 + ".jpg")
+    max_chars = _windows_units(str(path))
+
+    result = collision_path(path, lambda candidate: candidate == path, max_chars)
+
+    assert _windows_units(str(result)) <= max_chars
+    assert result.name.endswith(" (2).jpg")
+
+
 def test_destination_collapses_middle_when_over_239_characters(tmp_path: Path) -> None:
     relative = Path("Photos/Root") / Path(*(["very-long-folder"] * 30)) / "x.jpg"
 
     result = constrain_destination(tmp_path, relative)
 
-    assert len(str(result)) <= 239
+    assert _windows_units(str(result)) <= 239
     assert result.name == "x.jpg"
     assert any(part.startswith("_long_path_") for part in result.parts)
 
