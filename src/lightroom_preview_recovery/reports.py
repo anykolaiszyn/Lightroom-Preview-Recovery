@@ -2,8 +2,14 @@ from __future__ import annotations
 
 import csv
 import html
+import os
+import stat
+from collections.abc import Callable, Iterable
+from contextlib import AbstractContextManager
 from datetime import datetime
 from pathlib import Path
+from typing import TextIO
+from uuid import uuid4
 
 from .models import RecoveryResult, RecoveryStatus, RecoverySummary
 
@@ -28,17 +34,26 @@ CSV_FIELDS = [
 class ReportWriter:
     """Write recovery progress in formats safe to inspect after interruption."""
 
-    def __init__(self, output_root: Path) -> None:
+    def __init__(
+        self,
+        output_root: Path,
+        protected_sources: Iterable[Path] = (),
+    ) -> None:
         self.output_root = output_root.resolve()
         self.output_root.mkdir(parents=True, exist_ok=True)
+        self._protected_sources = tuple(
+            source.resolve() for source in protected_sources if source.exists()
+        )
         self.csv_path = self.output_root / "recovery-report.csv"
         self.log_path = self.output_root / "recovery-report.log"
         self.html_path = self.output_root / "recovery-report.html"
+        for target in (self.csv_path, self.log_path, self.html_path):
+            self._validate_target(target)
 
     def append(self, result: RecoveryResult) -> None:
         """Append and flush one result so resume data survives an interruption."""
-        write_header = not self.csv_path.exists() or self.csv_path.stat().st_size == 0
-        with self.csv_path.open("a", encoding="utf-8", newline="") as handle:
+        with self._open_append(self.csv_path, newline="") as handle:
+            write_header = os.fstat(handle.fileno()).st_size == 0
             writer = csv.DictWriter(handle, fieldnames=CSV_FIELDS, lineterminator="\n")
             if write_header:
                 writer.writeheader()
@@ -48,7 +63,7 @@ class ReportWriter:
     def log(self, message: str) -> None:
         """Append one locally timestamped log line."""
         timestamp = datetime.now().astimezone().isoformat(timespec="seconds")
-        with self.log_path.open("a", encoding="utf-8", newline="\n") as handle:
+        with self._open_append(self.log_path, newline="\n") as handle:
             handle.write(f"{timestamp} {message}\n")
             handle.flush()
 
@@ -99,7 +114,60 @@ class ReportWriter:
 </body>
 </html>
 """
-        self.html_path.write_text(document, encoding="utf-8")
+        self._atomic_write_html(document)
+
+    def _atomic_write_html(self, document: str) -> None:
+        self._validate_target(self.html_path)
+        temporary = self.html_path.with_name(
+            f".{self.html_path.name}.{uuid4().hex}.partial"
+        )
+        created = False
+        try:
+            with temporary.open("xb") as handle:
+                created = True
+                handle.write(document.encode("utf-8"))
+                handle.flush()
+                os.fsync(handle.fileno())
+            self._validate_target(self.html_path)
+            os.replace(temporary, self.html_path)
+        finally:
+            if created:
+                temporary.unlink(missing_ok=True)
+
+    def _open_append(
+        self, path: Path, newline: str
+    ) -> AbstractContextManager[TextIO]:
+        return _AppendTarget(self, path, newline)
+
+    def _validate_target(self, path: Path) -> None:
+        try:
+            metadata = path.lstat()
+        except FileNotFoundError:
+            return
+
+        attributes = getattr(metadata, "st_file_attributes", 0)
+        reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+        if stat.S_ISLNK(metadata.st_mode) or attributes & reparse_flag:
+            raise ValueError(f"report target must not be a link or reparse point: {path}")
+        if not stat.S_ISREG(metadata.st_mode):
+            raise ValueError(f"report target must be a regular file: {path}")
+        for source in self._protected_sources:
+            try:
+                if os.path.samefile(path, source):
+                    raise ValueError(
+                        f"report target must not be the same file as a protected source: {path}"
+                    )
+            except FileNotFoundError:
+                continue
+        if metadata.st_nlink != 1:
+            raise ValueError(f"report target must not have multiple hard links: {path}")
+
+    def _validate_open_file(self, path: Path, descriptor: int) -> None:
+        self._validate_target(path)
+        path_metadata = path.lstat()
+        open_metadata = os.fstat(descriptor)
+        if not os.path.samestat(path_metadata, open_metadata):
+            raise ValueError(f"report target changed while it was being opened: {path}")
 
     def _row_for_result(self, result: RecoveryResult) -> dict[str, object]:
         recovered_path = self._reported_path(result.recovered_path)
@@ -134,40 +202,123 @@ class ReportWriter:
         return f"{preview_uuid.lower()}:{preview_digest.lower()}"
 
 
-def load_resume_index(csv_path: Path) -> dict[str, RecoveryResult]:
+WarningCallback = Callable[[str], None]
+
+
+def load_resume_index(
+    csv_path: Path,
+    on_warning: WarningCallback | None = None,
+) -> dict[str, RecoveryResult]:
     """Load append-only report rows, retaining the most recent result per preview."""
     if not csv_path.exists():
         return {}
 
     index: dict[str, RecoveryResult] = {}
     with csv_path.open(newline="", encoding="utf-8") as handle:
-        for row in csv.DictReader(handle):
-            result = RecoveryResult(
-                image_id=int(row["image_id"]),
-                preview_uuid=row["preview_uuid"],
-                preview_digest=row["preview_digest"],
-                original_filename=_optional_text(row["original_filename"]),
-                original_folder=_optional_text(row["original_folder"]),
-                recovered_path=_optional_path(row["recovered_path"]),
-                width=_optional_int(row["width"]),
-                height=_optional_int(row["height"]),
-                byte_size=_optional_int(row["byte_size"]),
-                sha256=_optional_text(row["sha256"]),
-                mapping_status=row["mapping_status"],
-                status=RecoveryStatus(row["status"]),
-                message=row["message"],
-            )
+        reader = csv.DictReader(handle, strict=True)
+        while True:
+            try:
+                row = next(reader)
+            except StopIteration:
+                break
+            except (csv.Error, UnicodeError) as error:
+                _warn(
+                    on_warning,
+                    f"Ignoring malformed trailing resume CSV near line "
+                    f"{reader.line_num}: {error}",
+                )
+                break
+            try:
+                result = _result_from_row(row)
+            except (KeyError, TypeError, ValueError) as error:
+                _warn(
+                    on_warning,
+                    f"Ignoring malformed resume row at line "
+                    f"{reader.line_num}: {error}",
+                )
+                continue
             index[ReportWriter._resume_key(result.preview_uuid, result.preview_digest)] = result
     return index
 
 
-def _optional_int(value: str) -> int | None:
+def _result_from_row(row: dict[str, str | None]) -> RecoveryResult:
+    missing = [field for field in CSV_FIELDS if field not in row or row[field] is None]
+    if missing:
+        raise ValueError(f"missing fields: {', '.join(missing)}")
+    if not row["preview_uuid"] or not row["preview_digest"]:
+        raise ValueError("preview UUID and digest are required")
+    if not row["mapping_status"] or not row["status"]:
+        raise ValueError("mapping status and recovery status are required")
+    return RecoveryResult(
+        image_id=int(row["image_id"]),
+        preview_uuid=row["preview_uuid"],
+        preview_digest=row["preview_digest"],
+        original_filename=_optional_text(row["original_filename"]),
+        original_folder=_optional_text(row["original_folder"]),
+        recovered_path=_optional_path(row["recovered_path"]),
+        width=_optional_int(row["width"]),
+        height=_optional_int(row["height"]),
+        byte_size=_optional_int(row["byte_size"]),
+        sha256=_optional_text(row["sha256"]),
+        mapping_status=row["mapping_status"],
+        status=RecoveryStatus(row["status"]),
+        message=row["message"],
+    )
+
+
+def _warn(callback: WarningCallback | None, message: str) -> None:
+    if callback is not None:
+        callback(message)
+
+
+def _optional_int(value: str | None) -> int | None:
     return int(value) if value else None
 
 
-def _optional_text(value: str) -> str | None:
+def _optional_text(value: str | None) -> str | None:
     return value or None
 
 
-def _optional_path(value: str) -> Path | None:
+def _optional_path(value: str | None) -> Path | None:
     return Path(value) if value else None
+
+
+class _AppendTarget:
+    def __init__(self, writer: ReportWriter, path: Path, newline: str) -> None:
+        self._writer = writer
+        self._path = path
+        self._newline = newline
+        self._handle: TextIO | None = None
+
+    def __enter__(self) -> TextIO:
+        flags = os.O_WRONLY | os.O_APPEND
+        try:
+            descriptor = os.open(
+                self._path,
+                flags | os.O_CREAT | os.O_EXCL,
+                0o600,
+            )
+        except FileExistsError:
+            self._writer._validate_target(self._path)
+            descriptor = os.open(self._path, flags)
+            try:
+                self._writer._validate_open_file(self._path, descriptor)
+            except BaseException:
+                os.close(descriptor)
+                raise
+        self._handle = os.fdopen(
+            descriptor,
+            "a",
+            encoding="utf-8",
+            newline=self._newline,
+        )
+        return self._handle
+
+    def __exit__(
+        self,
+        exception_type: type[BaseException] | None,
+        exception: BaseException | None,
+        traceback: object,
+    ) -> None:
+        assert self._handle is not None
+        self._handle.close()

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import stat
 import threading
 from collections.abc import Callable
 from pathlib import Path
@@ -106,14 +107,21 @@ class RecoveryCoordinator:
         on_progress: ProgressCallback,
     ) -> RecoverySummary:
         summary = RecoverySummary()
-        config.output_root.mkdir(parents=True, exist_ok=True)
-        writer = ReportWriter(config.output_root)
+        output_root, catalog_path, previews_root = self._validated_paths(config)
+        writer = ReportWriter(
+            output_root,
+            protected_sources=(
+                catalog_path,
+                previews_root / "previews.db",
+                previews_root / "root-pixels.db",
+            ),
+        )
         self._reserved_destinations = set()
 
         try:
-            images = CatalogReader(config.catalog_path).load_images()
-            entries = PreviewIndex(config.previews_root).load_entries()
-            resume_index = load_resume_index(writer.csv_path)
+            images = CatalogReader(catalog_path).load_images()
+            entries = PreviewIndex(previews_root).load_entries()
+            resume_index = load_resume_index(writer.csv_path, writer.log)
 
             try:
                 for entry in entries:
@@ -124,7 +132,7 @@ class RecoveryCoordinator:
                         result = self._process_entry(
                             entry,
                             image,
-                            config.output_root,
+                            output_root,
                             resume_index.get(entry.key),
                             cancel_event,
                         )
@@ -142,6 +150,25 @@ class RecoveryCoordinator:
             writer.finalize(summary)
 
         return summary
+
+    @staticmethod
+    def _validated_paths(config: RecoveryConfig) -> tuple[Path, Path, Path]:
+        catalog_path = config.catalog_path.resolve(strict=True)
+        previews_root = config.previews_root.resolve(strict=True)
+        output_root = config.output_root.resolve()
+        for source, label in (
+            (catalog_path, "catalog"),
+            (previews_root, "previews"),
+        ):
+            if (
+                output_root == source
+                or output_root.is_relative_to(source)
+                or source.is_relative_to(output_root)
+            ):
+                raise ValueError(
+                    f"recovery output must not overlap the {label} source"
+                )
+        return output_root, catalog_path, previews_root
 
     def _process_entry(
         self,
@@ -225,6 +252,19 @@ class RecoveryCoordinator:
             resume.recovered_path is None
             or resume.byte_size is None
             or resume.sha256 is None
+        ):
+            return False
+
+        try:
+            metadata = resume.recovered_path.lstat()
+        except OSError:
+            return False
+        attributes = getattr(metadata, "st_file_attributes", 0)
+        reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+        if (
+            stat.S_ISLNK(metadata.st_mode)
+            or attributes & reparse_flag
+            or not stat.S_ISREG(metadata.st_mode)
         ):
             return False
 

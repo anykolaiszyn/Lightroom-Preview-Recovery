@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import hashlib
 import os
 import sqlite3
@@ -21,6 +22,7 @@ from lightroom_preview_recovery.recovery import (
     atomic_write_validated,
     read_record,
 )
+from lightroom_preview_recovery.reports import CSV_FIELDS
 from tests.fixture_builders import build_catalog, build_previews
 from tests.test_jpeg import fake_jpeg
 
@@ -77,6 +79,23 @@ def _config(tmp_path: Path, record_data: bytes) -> RecoveryConfig:
     return RecoveryConfig(catalog, previews, tmp_path / "output")
 
 
+def _rewrite_latest_resume_path(
+    csv_path: Path,
+    recovered_path: Path,
+    byte_size: int,
+    sha256: str,
+) -> None:
+    with csv_path.open(newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+    rows[-1]["recovered_path"] = str(recovered_path)
+    rows[-1]["byte_size"] = str(byte_size)
+    rows[-1]["sha256"] = sha256
+    with csv_path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=CSV_FIELDS, lineterminator="\n")
+        writer.writeheader()
+        writer.writerows(rows)
+
+
 def test_recovers_largest_jpeg_with_catalog_path_and_report(tmp_path: Path) -> None:
     config = _config(
         tmp_path,
@@ -107,6 +126,56 @@ def test_cancellation_finalizes_partial_report(tmp_path: Path) -> None:
     assert summary.cancelled is True
     assert summary.examined == 0
     assert (config.output_root / "recovery-report.html").exists()
+
+
+def test_rejects_output_inside_previews_before_creating_reports(
+    tmp_path: Path,
+) -> None:
+    catalog = build_catalog(tmp_path / "sample.lrcat")
+    previews = build_previews(tmp_path / "Previews.lrdata", fake_jpeg(80, 54))
+    config = RecoveryConfig(catalog, previews, previews / "unsafe-output")
+
+    with pytest.raises(ValueError, match="overlap"):
+        RecoveryCoordinator().run(config, Event(), lambda *_: None)
+
+    assert not config.output_root.exists()
+    assert not (previews / "recovery-report.html").exists()
+
+
+def test_rejects_output_root_containing_catalog_before_report_write(
+    tmp_path: Path,
+) -> None:
+    output_parent = tmp_path / "destination"
+    output_root = output_parent / "Recovered Lightroom Previews"
+    output_root.mkdir(parents=True)
+    catalog = build_catalog(output_root / "sample.lrcat")
+    previews = build_previews(tmp_path / "Previews.lrdata", fake_jpeg(80, 54))
+    config = RecoveryConfig(catalog, previews, output_parent)
+
+    with pytest.raises(ValueError, match="overlap"):
+        RecoveryCoordinator().run(config, Event(), lambda *_: None)
+
+    assert not (output_root / "recovery-report.html").exists()
+
+
+def test_rejects_output_symlink_resolving_to_previews(
+    tmp_path: Path,
+) -> None:
+    catalog = build_catalog(tmp_path / "sample.lrcat")
+    previews = build_previews(tmp_path / "Previews.lrdata", fake_jpeg(80, 54))
+    output_parent = tmp_path / "destination"
+    output_parent.mkdir()
+    output_link = output_parent / "Recovered Lightroom Previews"
+    try:
+        output_link.symlink_to(previews, target_is_directory=True)
+    except OSError as error:
+        pytest.skip(f"directory symlinks unavailable: {error}")
+    config = RecoveryConfig(catalog, previews, output_parent)
+
+    with pytest.raises(ValueError, match="overlap"):
+        RecoveryCoordinator().run(config, Event(), lambda *_: None)
+
+    assert not (previews / "recovery-report.html").exists()
 
 
 def test_case_only_destinations_collide_within_one_run_without_deduplication(
@@ -225,11 +294,21 @@ def test_read_record_checks_cancellation_during_chunked_read(
 ) -> None:
     record = tmp_path / "large.lrprev"
     record.write_bytes(b"x" * (1024 * 1024 + 1))
-    cancel = Event()
-    cancel.set()
+
+    class CancelAfterFirstChunk:
+        def __init__(self) -> None:
+            self.checks = 0
+
+        def is_set(self) -> bool:
+            self.checks += 1
+            return self.checks >= 2
+
+    cancel = CancelAfterFirstChunk()
 
     with pytest.raises(RecoveryCancelled):
-        read_record(record, cancel)
+        read_record(record, cancel)  # type: ignore[arg-type]
+
+    assert cancel.checks == 2
 
 
 def test_corrupt_and_missing_records_are_isolated_from_valid_records(
@@ -321,6 +400,100 @@ def test_progress_callback_failure_still_finalizes_report(tmp_path: Path) -> Non
     report = config.output_root / "recovery-report.html"
     assert report.exists()
     assert "Recovered: 1" in report.read_text(encoding="utf-8")
+
+
+def test_resume_path_outside_output_is_not_skipped(tmp_path: Path) -> None:
+    jpeg = fake_jpeg(80, 54)
+    config = _config(tmp_path, jpeg)
+    first = RecoveryCoordinator().run(config, Event(), lambda *_: None)
+    first_path = first.results[0].recovered_path
+    assert first_path is not None
+    outside = tmp_path / "outside.jpg"
+    outside.write_bytes(jpeg)
+    _rewrite_latest_resume_path(
+        config.output_root / "recovery-report.csv",
+        outside,
+        len(jpeg),
+        hashlib.sha256(jpeg).hexdigest(),
+    )
+
+    summary = RecoveryCoordinator().run(config, Event(), lambda *_: None)
+
+    assert summary.recovered == 1
+    assert summary.skipped == 0
+    assert summary.results[0].recovered_path not in {outside, first_path}
+
+
+def test_resume_symlink_is_not_skipped(tmp_path: Path) -> None:
+    jpeg = fake_jpeg(80, 54)
+    config = _config(tmp_path, jpeg)
+    first = RecoveryCoordinator().run(config, Event(), lambda *_: None)
+    first_path = first.results[0].recovered_path
+    assert first_path is not None
+    target = config.output_root / "resume-target.jpg"
+    target.write_bytes(jpeg)
+    link = config.output_root / "resume-link.jpg"
+    try:
+        link.symlink_to(target)
+    except OSError as error:
+        pytest.skip(f"file symlinks unavailable: {error}")
+    _rewrite_latest_resume_path(
+        config.output_root / "recovery-report.csv",
+        link,
+        len(jpeg),
+        hashlib.sha256(jpeg).hexdigest(),
+    )
+
+    summary = RecoveryCoordinator().run(config, Event(), lambda *_: None)
+
+    assert summary.recovered == 1
+    assert summary.skipped == 0
+    assert summary.results[0].recovered_path not in {link, target, first_path}
+
+
+def test_malformed_resume_rows_are_logged_without_blocking_recovery(
+    tmp_path: Path,
+) -> None:
+    config = _config(tmp_path, fake_jpeg(80, 54))
+    config.output_root.mkdir(parents=True)
+    csv_path = config.output_root / "recovery-report.csv"
+    csv_path.write_text(
+        ",".join(CSV_FIELDS) + "\nnot-an-integer,broken\n",
+        encoding="utf-8",
+    )
+
+    summary = RecoveryCoordinator().run(config, Event(), lambda *_: None)
+
+    assert summary.recovered == 1
+    log = (config.output_root / "recovery-report.log").read_text(encoding="utf-8")
+    assert "resume row" in log.lower()
+
+
+@pytest.mark.parametrize("source_name", ["catalog", "previews", "pixels"])
+def test_coordinator_rejects_report_hardlinked_to_source_database(
+    tmp_path: Path,
+    source_name: str,
+) -> None:
+    config = _config(tmp_path, fake_jpeg(80, 54))
+    pixels = config.previews_root / "root-pixels.db"
+    pixels.write_bytes(b"pixels")
+    sources = {
+        "catalog": config.catalog_path,
+        "previews": config.previews_root / "previews.db",
+        "pixels": pixels,
+    }
+    config.output_root.mkdir(parents=True)
+    report = config.output_root / "recovery-report.csv"
+    try:
+        os.link(sources[source_name], report)
+    except OSError as error:
+        pytest.skip(f"hard links unavailable: {error}")
+    original = sources[source_name].read_bytes()
+
+    with pytest.raises(ValueError, match="hard links|protected"):
+        RecoveryCoordinator().run(config, Event(), lambda *_: None)
+
+    assert sources[source_name].read_bytes() == original
 
 
 def test_recovered_hash_matches_written_bytes(tmp_path: Path) -> None:
