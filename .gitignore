@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+.pytest_cache/
+build/
+dist/
+*.spec.bak
+work/
+*.lrcat
+*.lrprev
+*.lrdata/
+Recovered Lightroom Previews/
+.superpowers/
+outputs/
