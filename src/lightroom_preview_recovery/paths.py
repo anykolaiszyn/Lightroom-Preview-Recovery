@@ -16,10 +16,32 @@ RESERVED = {
 }
 
 
+def windows_path_key(path: Path) -> str:
+    """Return a normalized, case-insensitive key for Windows path reservations."""
+    return str(path.resolve()).replace("/", "\\").casefold()
+
+
+def _windows_units(value: str) -> int:
+    return len(value.encode("utf-16-le")) // 2
+
+
+def _truncate_utf16(value: str, max_units: int) -> str:
+    """Truncate without splitting a Unicode character in Windows path units."""
+    result: list[str] = []
+    used = 0
+    for character in value:
+        size = _windows_units(character)
+        if used + size > max_units:
+            break
+        result.append(character)
+        used += size
+    return "".join(result)
+
+
 def sanitize_component(value: str, max_length: int = 100) -> str:
     """Return a single Windows-safe file-system component."""
     cleaned = INVALID.sub("_", value).rstrip(" .") or "_"
-    if cleaned.upper() in RESERVED:
+    if cleaned.partition(".")[0].upper() in RESERVED:
         cleaned = "_" + cleaned
     if len(cleaned) > max_length:
         digest = hashlib.sha1(cleaned.encode("utf-8")).hexdigest()[:8]
@@ -70,7 +92,12 @@ def collision_path(path: Path, occupied: Callable[[Path], bool]) -> Path:
     if not occupied(path):
         return path
     for number in range(2, 100_000):
-        candidate = path.with_name(f"{path.stem} ({number}){path.suffix}")
+        suffix = f" ({number}){path.suffix}"
+        available = 239 - _windows_units(str(path.parent)) - 1 - _windows_units(suffix)
+        if available < 1:
+            raise OSError(f"selected output path is too long for {path.name}")
+        stem = _truncate_utf16(path.stem, available)
+        candidate = path.with_name(f"{stem}{suffix}")
         if not occupied(candidate):
             return candidate
     raise OSError(f"too many filename collisions for {path.name}")
@@ -83,7 +110,7 @@ def constrain_destination(
 ) -> Path:
     """Contain a destination and collapse it deterministically when too long."""
     destination = contained_path(root, relative)
-    if len(str(destination)) <= max_chars:
+    if _windows_units(str(destination)) <= max_chars:
         return destination
 
     parts = relative.parts
@@ -93,13 +120,13 @@ def constrain_destination(
     else:
         relative = Path(f"_long_path_{digest}", parts[-1])
     destination = contained_path(root, relative)
-    if len(str(destination)) <= max_chars:
+    if _windows_units(str(destination)) <= max_chars:
         return destination
 
-    overflow = len(str(destination)) - max_chars
-    keep = max(12, len(destination.stem) - overflow - 9)
-    shortened = f"{destination.stem[:keep]}-{digest}{destination.suffix}"
+    overflow = _windows_units(str(destination)) - max_chars
+    keep = max(12, _windows_units(destination.stem) - overflow - 9)
+    shortened = f"{_truncate_utf16(destination.stem, keep)}-{digest}{destination.suffix}"
     destination = destination.with_name(shortened)
-    if len(str(destination)) > max_chars:
+    if _windows_units(str(destination)) > max_chars:
         raise OSError("selected output path is too long for safe recovery")
     return destination

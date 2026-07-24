@@ -9,6 +9,7 @@ from lightroom_preview_recovery.paths import (
     constrain_destination,
     planned_relative_path,
     sanitize_component,
+    windows_path_key,
 )
 
 
@@ -16,6 +17,20 @@ def test_sanitizes_windows_reserved_and_invalid_names() -> None:
     assert sanitize_component("CON") == "_CON"
     assert sanitize_component("con. ") == "_con"
     assert sanitize_component("bad:name. ") == "bad_name"
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("CON.txt", "_CON.txt"),
+        ("LPT1.jpg", "_LPT1.jpg"),
+        ("cOn.TxT", "_cOn.TxT"),
+    ],
+)
+def test_sanitizes_windows_device_names_with_extensions(
+    value: str, expected: str
+) -> None:
+    assert sanitize_component(value) == expected
 
 
 def test_virtual_copy_is_named_before_jpg_suffix(tmp_path: Path) -> None:
@@ -48,6 +63,17 @@ def test_collision_path_never_reuses_occupied_filename(tmp_path: Path) -> None:
     assert collision_path(path, occupied.__contains__) == tmp_path / "preview (3).jpg"
 
 
+def test_collision_path_uses_windows_case_insensitive_reservations(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "preview.jpg"
+    occupied = {windows_path_key(tmp_path / "PREVIEW.JPG")}
+
+    assert collision_path(path, lambda candidate: windows_path_key(candidate) in occupied) == (
+        tmp_path / "preview (2).jpg"
+    )
+
+
 def test_destination_collapses_middle_when_over_239_characters(tmp_path: Path) -> None:
     relative = Path("Photos/Root") / Path(*(["very-long-folder"] * 30)) / "x.jpg"
 
@@ -62,3 +88,27 @@ def test_destination_long_path_collapse_is_deterministic(tmp_path: Path) -> None
     relative = Path("Photos/Root") / Path(*(["very-long-folder"] * 30)) / "x.jpg"
 
     assert constrain_destination(tmp_path, relative) == constrain_destination(tmp_path, relative)
+
+
+def test_destination_limit_uses_windows_utf16_code_units(tmp_path: Path) -> None:
+    relative = Path("Photos") / ("😀" * 10) / "x.jpg"
+    code_point_limit = len(str(tmp_path.resolve() / relative)) + 5
+
+    result = constrain_destination(tmp_path, relative, max_chars=code_point_limit)
+
+    assert _windows_units(str(result)) <= code_point_limit
+    assert any(part.startswith("_long_path_") for part in result.parts)
+
+
+def test_collision_suffixing_preserves_windows_path_limit(tmp_path: Path) -> None:
+    destination = constrain_destination(tmp_path, Path("a" * 500 + ".jpg"))
+
+    result = collision_path(destination, lambda candidate: candidate == destination)
+
+    assert _windows_units(str(destination)) == 239
+    assert _windows_units(str(result)) <= 239
+    assert result.name.endswith(" (2).jpg")
+
+
+def _windows_units(value: str) -> int:
+    return len(value.encode("utf-16-le")) // 2
