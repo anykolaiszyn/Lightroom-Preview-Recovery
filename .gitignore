@@ -13,3 +13,6 @@ Recovered Lightroom Previews/
 .worktrees/
 outputs/
 *.egg-info/
+/AGENTS.md
+/CLAUDE.md
+/docs/superpowers/

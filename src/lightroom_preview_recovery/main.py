@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from .gui import MainWindow
+from .gui import MainWindow, SplashScreen
 
 
 def main() -> int:
-    window = MainWindow()
-    window.mainloop()
+    splash = SplashScreen()
+    splash.on_dismiss(lambda: MainWindow().mainloop())
+    splash.mainloop()
     return 0
 
 

@@ -21,7 +21,7 @@ from lightroom_preview_recovery.worker import (
 )
 
 
-def _window_gone(instance: gui.MainWindow) -> bool:
+def _window_gone(instance: tk.Misc) -> bool:
     try:
         return not instance.winfo_exists()
     except tk.TclError:
@@ -56,7 +56,7 @@ def _enabled(widget: tk.Widget) -> bool:
 
 
 def _pump_until(
-    window: gui.MainWindow,
+    window: tk.Misc,
     predicate,
     *,
     timeout: float = 3.0,
@@ -423,3 +423,38 @@ def test_elapsed_timer_uses_hours_minutes_seconds(
     window._started_at = 0.0
     window._update_elapsed()
     assert window.elapsed_var.get() == "Elapsed  01:01:01"
+
+
+def test_coffee_link_opens_support_page(
+    window: gui.MainWindow, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    opened: list[str] = []
+    monkeypatch.setattr(gui.webbrowser, "open", opened.append)
+
+    window.coffee_link.invoke()
+
+    assert opened == [gui.COFFEE_URL]
+
+
+def test_splash_screen_auto_dismisses_and_reports_done() -> None:
+    splash = gui.SplashScreen(display_ms=1)
+    splash.withdraw()
+    finished: list[bool] = []
+    splash.on_dismiss(lambda: finished.append(True))
+
+    _pump_until(splash, lambda: bool(finished), timeout=3.0)
+
+    assert finished == [True]
+    _pump_until(splash, lambda: _window_gone(splash), timeout=3.0)
+
+
+def test_splash_screen_dismisses_immediately_on_click() -> None:
+    splash = gui.SplashScreen(display_ms=10_000)
+    splash.withdraw()
+    finished: list[bool] = []
+    splash.on_dismiss(lambda: finished.append(True))
+
+    splash.event_generate("<Button-1>")
+
+    _pump_until(splash, lambda: bool(finished), timeout=3.0)
+    assert finished == [True]

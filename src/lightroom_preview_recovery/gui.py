@@ -4,6 +4,7 @@ import os
 import time
 import tkinter as tk
 import webbrowser
+from collections.abc import Callable
 from pathlib import Path
 from tkinter import filedialog, ttk
 
@@ -20,6 +21,8 @@ _LINE = "#CDD4D8"
 _CYAN = "#2D7E91"
 _CYAN_PALE = "#E8EFF0"
 _ACTIVITY_TEXT = "#E5EEF0"
+
+COFFEE_URL = "https://buymeacoffee.com/alexnyk"
 
 
 def _open_local_path(path: Path) -> None:
@@ -134,6 +137,19 @@ class MainWindow(tk.Tk):
             lightcolor=_CYAN,
             darkcolor=_CYAN,
             thickness=11,
+        )
+        style.configure(
+            "Coffee.TButton",
+            background=_PAPER,
+            foreground=_SLATE,
+            padding=(0, 4),
+            font=("Segoe UI", 9),
+            borderwidth=0,
+            relief="flat",
+        )
+        style.map(
+            "Coffee.TButton",
+            foreground=[("active", _CYAN), ("!active", _SLATE)],
         )
 
     def _build_ui(self) -> None:
@@ -323,6 +339,17 @@ class MainWindow(tk.Tk):
             takefocus=True,
         )
         self.activity.grid(row=8, column=0, sticky="nsew")
+
+        footer = ttk.Frame(root, style="Paper.TFrame")
+        footer.grid(row=9, column=0, sticky="e", pady=(6, 0))
+        self.coffee_link = ttk.Button(
+            footer,
+            text="☕ Buy me a coffee",
+            command=self._open_coffee_link,
+            style="Coffee.TButton",
+            cursor="hand2",
+        )
+        self.coffee_link.grid(row=0, column=0)
 
         self._selector_widgets = (
             self.catalog_entry,
@@ -694,6 +721,9 @@ class MainWindow(tk.Tk):
         if path is not None and path.is_file():
             _open_local_path(path)
 
+    def _open_coffee_link(self) -> None:
+        webbrowser.open(COFFEE_URL)
+
     def _refresh_open_actions(self) -> None:
         self._set_enabled(
             self.open_output_button,
@@ -733,3 +763,85 @@ class MainWindow(tk.Tk):
 
     def destroy(self) -> None:
         self._final_destroy()
+
+
+class SplashScreen(tk.Tk):
+    """A brief, borderless launch screen shown before the main window."""
+
+    def __init__(self, *, display_ms: int = 1500) -> None:
+        super().__init__()
+        self._callback: Callable[[], None] | None = None
+        self._dismissed = False
+        self._after_id: str | None = None
+
+        self.overrideredirect(True)
+        self.configure(background=_GRAPHITE)
+        self._center(360, 220)
+
+        ttk.Style(self).configure(
+            "Splash.TFrame", background=_GRAPHITE
+        )
+        ttk.Style(self).configure(
+            "SplashTitle.TLabel",
+            background=_GRAPHITE,
+            foreground=_ACTIVITY_TEXT,
+            font=("Georgia", 18, "bold"),
+        )
+        ttk.Style(self).configure(
+            "SplashTagline.TLabel",
+            background=_GRAPHITE,
+            foreground=_SLATE,
+            font=("Segoe UI", 10),
+        )
+
+        frame = ttk.Frame(self, style="Splash.TFrame", padding=24)
+        frame.grid(row=0, column=0, sticky="nsew")
+        self.rowconfigure(0, weight=1)
+        self.columnconfigure(0, weight=1)
+        frame.columnconfigure(0, weight=1)
+        frame.rowconfigure(1, weight=1)
+
+        ttk.Label(
+            frame,
+            text="Lightroom Preview Recovery",
+            style="SplashTitle.TLabel",
+            anchor="center",
+            justify="center",
+        ).grid(row=0, column=0, sticky="ew")
+        ttk.Label(
+            frame,
+            text="Recovering cached previews from your backup…",
+            style="SplashTagline.TLabel",
+            anchor="center",
+            justify="center",
+        ).grid(row=1, column=0, sticky="ew", pady=(10, 0))
+
+        self.bind("<Button-1>", lambda _event: self._dismiss())
+        self._after_id = self.after(display_ms, self._dismiss)
+
+    def _center(self, width: int, height: int) -> None:
+        self.update_idletasks()
+        screen_width = self.winfo_screenwidth()
+        screen_height = self.winfo_screenheight()
+        x = max(0, (screen_width - width) // 2)
+        y = max(0, (screen_height - height) // 2)
+        self.geometry(f"{width}x{height}+{x}+{y}")
+
+    def on_dismiss(self, callback: Callable[[], None]) -> None:
+        """Register the callback to run once, when the splash closes."""
+        self._callback = callback
+
+    def _dismiss(self) -> None:
+        if self._dismissed:
+            return
+        self._dismissed = True
+        if self._after_id is not None:
+            try:
+                self.after_cancel(self._after_id)
+            except tk.TclError:
+                pass
+            self._after_id = None
+        callback = self._callback
+        self.destroy()
+        if callback is not None:
+            callback()

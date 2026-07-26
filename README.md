@@ -101,10 +101,6 @@ If this saved photos you thought were gone, and you'd like to say thanks:
 
 ## For developers
 
-Building from source, running tests, and the internal architecture are
-documented in [`AGENTS.md`](AGENTS.md) and [`CLAUDE.md`](CLAUDE.md). Short
-version:
-
 ```powershell
 git clone https://github.com/anykolaiszyn/Lightroom-Preview-Recovery.git
 cd Lightroom-Preview-Recovery
