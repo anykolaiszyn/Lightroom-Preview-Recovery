@@ -97,7 +97,7 @@ missing gets processed. Nothing gets overwritten or duplicated.
 
 If this saved photos you thought were gone, and you'd like to say thanks:
 
-**[☕ Buy me a coffee](#)** *(link coming soon)*
+**[☕ Buy me a coffee](https://buymeacoffee.com/alexnyk)**
 
 ## For developers
 
