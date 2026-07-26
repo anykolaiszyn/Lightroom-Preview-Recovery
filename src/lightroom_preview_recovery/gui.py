@@ -141,22 +141,6 @@ class MainWindow(tk.Tk):
             darkcolor=_CYAN,
             thickness=11,
         )
-        style.configure(
-            "Coffee.TButton",
-            background=_COFFEE_YELLOW,
-            foreground=_GRAPHITE,
-            padding=(12, 6),
-            font=("Segoe UI", 9, "bold"),
-            borderwidth=1,
-            bordercolor=_COFFEE_YELLOW_BORDER,
-            relief="flat",
-        )
-        style.map(
-            "Coffee.TButton",
-            background=[("active", _COFFEE_YELLOW_HOVER), ("!active", _COFFEE_YELLOW)],
-            bordercolor=[("active", _COFFEE_YELLOW_BORDER), ("!active", _COFFEE_YELLOW_BORDER)],
-        )
-
     def _build_ui(self) -> None:
         root = ttk.Frame(self, style="Paper.TFrame", padding=(28, 23))
         root.grid(row=0, column=0, sticky="nsew")
@@ -175,7 +159,7 @@ class MainWindow(tk.Tk):
         heading.grid(row=1, column=0, sticky="ew", pady=(4, 3))
         heading.columnconfigure(0, weight=1)
         ttk.Label(
-            heading, text="Preview recovery", style="Title.TLabel"
+            heading, text="PREVIEW RECOVERY", style="Title.TLabel"
         ).grid(row=0, column=0, sticky="w")
         self.elapsed_var = tk.StringVar(value="Elapsed  00:00:00")
         ttk.Label(
@@ -347,12 +331,22 @@ class MainWindow(tk.Tk):
 
         footer = ttk.Frame(root, style="Paper.TFrame")
         footer.grid(row=9, column=0, sticky="e", pady=(10, 0))
-        self.coffee_link = ttk.Button(
+        self.coffee_link = tk.Button(
             footer,
-            text="☕ buyMeACoffee",
+            text="☕ Buy Me A Coffee",
             command=self._open_coffee_link,
-            style="Coffee.TButton",
             cursor="hand2",
+            background=_COFFEE_YELLOW,
+            activebackground=_COFFEE_YELLOW_HOVER,
+            foreground=_GRAPHITE,
+            activeforeground=_GRAPHITE,
+            font=("Segoe UI", 9, "bold"),
+            relief="flat",
+            borderwidth=1,
+            highlightbackground=_COFFEE_YELLOW_BORDER,
+            highlightthickness=1,
+            padx=12,
+            pady=6,
         )
         self.coffee_link.grid(row=0, column=0)
 
