@@ -21,6 +21,9 @@ _LINE = "#CDD4D8"
 _CYAN = "#2D7E91"
 _CYAN_PALE = "#E8EFF0"
 _ACTIVITY_TEXT = "#E5EEF0"
+_COFFEE_YELLOW = "#FFDD00"
+_COFFEE_YELLOW_HOVER = "#FFE666"
+_COFFEE_YELLOW_BORDER = "#E0C200"
 
 COFFEE_URL = "https://buymeacoffee.com/alexnyk"
 
@@ -140,16 +143,18 @@ class MainWindow(tk.Tk):
         )
         style.configure(
             "Coffee.TButton",
-            background=_PAPER,
-            foreground=_SLATE,
-            padding=(0, 4),
-            font=("Segoe UI", 9),
-            borderwidth=0,
+            background=_COFFEE_YELLOW,
+            foreground=_GRAPHITE,
+            padding=(12, 6),
+            font=("Segoe UI", 9, "bold"),
+            borderwidth=1,
+            bordercolor=_COFFEE_YELLOW_BORDER,
             relief="flat",
         )
         style.map(
             "Coffee.TButton",
-            foreground=[("active", _CYAN), ("!active", _SLATE)],
+            background=[("active", _COFFEE_YELLOW_HOVER), ("!active", _COFFEE_YELLOW)],
+            bordercolor=[("active", _COFFEE_YELLOW_BORDER), ("!active", _COFFEE_YELLOW_BORDER)],
         )
 
     def _build_ui(self) -> None:
@@ -341,10 +346,10 @@ class MainWindow(tk.Tk):
         self.activity.grid(row=8, column=0, sticky="nsew")
 
         footer = ttk.Frame(root, style="Paper.TFrame")
-        footer.grid(row=9, column=0, sticky="e", pady=(6, 0))
+        footer.grid(row=9, column=0, sticky="e", pady=(10, 0))
         self.coffee_link = ttk.Button(
             footer,
-            text="☕ Buy me a coffee",
+            text="☕ buyMeACoffee",
             command=self._open_coffee_link,
             style="Coffee.TButton",
             cursor="hand2",
