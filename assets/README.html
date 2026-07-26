@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lightroom Preview Recovery — Read Me</title>
+  <style>
+    body { font: 16px/1.55 system-ui, sans-serif; margin: 2rem auto; max-width: 52rem; padding: 0 1rem; color: #1f2933; }
+    h1, h2 { line-height: 1.2; color: #102a43; }
+    .warning { border-left: .35rem solid #c05621; background: #fffaf0; padding: 1rem; font-weight: 650; }
+    code, pre { font-family: ui-monospace, Consolas, monospace; }
+    pre { background: #f0f4f8; overflow-x: auto; padding: 1rem; }
+  </style>
+</head>
+<body>
+  <h1>Lightroom Preview Recovery</h1>
+  <p class="warning">Important: this utility recovers cached JPEG previews, not your original RAW, JPEG, TIFF, PSD, or video files. Preview quality and size are limited by what Lightroom saved in its cache.</p>
+
+  <h2>Before you begin</h2>
+  <p>Keep the original backup unchanged. Work from a copy if you have any doubt, and choose an output location outside the backup.</p>
+
+  <h2>Select the three inputs</h2>
+  <ol>
+    <li>Select the Lightroom catalog file ending in <code>.lrcat</code>.</li>
+    <li>Select the matching <code>Previews.lrdata</code> folder. It must contain <code>previews.db</code>.</li>
+    <li>Select an empty or separate output parent folder with sufficient free space. The utility creates its own recovery folder inside it.</li>
+  </ol>
+  <p>Review the preflight summary, then choose <strong>Start Recovery</strong>.</p>
+
+  <h2>Where recovered files go</h2>
+  <pre>Recovered Lightroom Previews/
+  Photos/
+    &lt;catalog root&gt;/
+      &lt;catalog folder&gt;/
+        &lt;image name&gt;.jpg
+  Unmapped/
+  recovery-report.html
+  recovery-report.csv
+  recovery-log.txt</pre>
+  <p>All recovered files use the <code>.jpg</code> extension because they are cached JPEG previews.</p>
+
+  <h2>What the statuses mean</h2>
+  <ul>
+    <li><strong>Mapped</strong>: a preview was matched to catalog filename and folder information.</li>
+    <li><strong>Unmapped</strong>: a valid preview was recovered, but no matching catalog record was available; it is stored in <code>Unmapped</code>.</li>
+    <li><strong>Skipped</strong>: an equivalent completed output from an earlier run was retained instead of being overwritten.</li>
+    <li><strong>Failed</strong>: that record could not be read, decoded, or written. Review the reports and log; other records can still succeed.</li>
+  </ul>
+
+  <h2>Cancel and rerun safely</h2>
+  <p>Choose <strong>Cancel</strong> to stop after the current safe file operation. A partial report is written. To continue later, select the same inputs and output parent, then start again; already verified completed outputs are skipped and existing files are never overwritten.</p>
+
+  <h2>Windows SmartScreen</h2>
+  <p>This portable build is unsigned, so Windows may show a publisher warning. Review that warning and run it only when this ZIP came directly from this build. Do not run a ZIP received from an untrusted or altered source.</p>
+</body>
+</html>

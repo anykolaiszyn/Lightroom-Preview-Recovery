@@ -84,104 +84,49 @@ Important verified live-source facts:
 - The exact 8,099-file metadata manifest and database size/mtime snapshots were
   unchanged after the live test
 
-## Current unfinished state
+## Current state: tkinter migration and onedir packaging complete
 
-The first PySide6 one-file build passed 102 tests but must not ship. Release
-review found that it bundled unused Qt PDF/Virtual Keyboard components and did
-not provide a satisfactory LGPL relinking/source mechanism. It also exposed a
-PyInstaller one-file process-tree verification problem.
+The PySide6-to-tkinter migration and the onedir packaging rework (formerly
+Task 10 and the "next actions" below) are finished and independently
+reviewed:
 
-The current `outputs\Lightroom-Preview-Recovery-Windows.zip` is that rejected
-build. Do not deliver or rely on it.
+- `main.py` launches `gui.MainWindow().mainloop()` directly — no PySide6
+  anywhere in the codebase or in `pyproject.toml`'s dependencies.
+- `packaging/LightroomPreviewRecovery.spec` builds a PyInstaller **onedir**
+  package with `excludes=["PySide6", "shiboken6", "PyQt5", "PyQt6"]`.
+- `scripts/build.ps1` is portable (`-Python` param → `LRPR_PYTHON` env var →
+  project `.venv` → PATH `python`; no hardcoded external venv path).
+- `scripts/verify-package.ps1` validates the onedir layout and the exact
+  license inventory (Python, Tcl/Tk, OpenSSL, PyInstaller — LGPL notice
+  removed as unused).
+- A fresh onedir build was produced from a clean `build/`/`dist/`/`outputs/`,
+  scanned for `*Qt*`/`*PySide*`/`*shiboken*` with zero matches, and passed
+  `verify-package.ps1` (window shows, closes cleanly, no forbidden files).
+- The packaged-workflow smoke test ran against the real backup at
+  `E:\WD_BACKUP\Lightroom\`: preflight reported exactly 8,099/8,099, a
+  bounded 3-record recovery ran and cancelled cleanly, report counters
+  matched files written, all confined to `work\smoke-output`.
+- `tests/test_live_backup.py` was re-run immediately afterward and fully
+  passed, proving the smoke test left the real backup unchanged.
+- A fresh independent reviewer inspected the full diff and found no
+  Critical/Important issues (a couple of low-severity hardening notes were
+  applied: `build.ps1` now passes explicit `--distpath`/`--workpath` to
+  PyInstaller, and `verify-package.ps1`'s `Compare-Object` checks are now
+  case-sensitive).
 
-To remove the Qt redistribution burden, the GUI is being migrated from PySide6
-to standard-library `tkinter`/`ttk`:
+**Known environment flakiness, not a code defect:** on this development
+machine, `tests/test_gui.py` intermittently (roughly 1-in-5 runs) shows a
+single `_tkinter.TclError` from creating many `tk.Tk()` instances in rapid
+succession under pytest — root-caused to Windows Defender real-time
+protection interfering with Tcl file reads under rapid file-handle churn.
+It does not reproduce in a raw create/destroy loop outside pytest, and the
+97 non-GUI tests are never affected. A real, separate bug in the `window`
+test fixture's teardown (which could leave a Tk interpreter only
+half-destroyed across tests) was found and fixed with a regression test;
+that fix is unrelated to this residual environment flakiness.
 
-```text
-src\lightroom_preview_recovery\gui.py
-src\lightroom_preview_recovery\worker.py
-src\lightroom_preview_recovery\main.py
-tests\test_gui.py
-```
-
-The migration agent was interrupted by an account usage limit after writing the
-new implementation and tests.
-
-Current fresh verification:
-
-```text
-85 passed
-1 optional live-source test skipped
-13 GUI setup errors
-```
-
-The GUI errors occur before test logic because the installed Tcl scripts and
-loaded Tcl runtime do not match:
-
-```text
-_tkinter.TclError: Can't find a usable init.tcl
-```
-
-Known local paths:
-
-```text
-Python:
-C:\Users\alexn\Documents\Codex\.venvs\lrpr\Scripts\python.exe
-
-Base Python:
-C:\Users\alexn\AppData\Local\Programs\Python\Python312\python.exe
-
-Tcl scripts:
-C:\Users\alexn\AppData\Local\Programs\Python\Python312\tcl\tcl8.6
-
-Tk scripts:
-C:\Users\alexn\AppData\Local\Programs\Python\Python312\tcl\tk8.6
-```
-
-`init.tcl` requires Tcl 8.6.15, but even base Python fails to initialize Tk
-with those scripts. Treat this as a local Tcl/Tk installation mismatch, not an
-application-test failure.
-
-## Next actions, in order
-
-1. Inspect the uncommitted Tk GUI, worker, entry point, and GUI tests.
-2. Resolve the local Tcl/Tk mismatch using a matching runtime or a repaired
-   Python Tcl/Tk installation. Do not copy random Tcl files from the internet.
-3. Run:
-
-   ```powershell
-   C:\Users\alexn\Documents\Codex\.venvs\lrpr\Scripts\python.exe -m pytest tests\test_gui.py -v
-   C:\Users\alexn\Documents\Codex\.venvs\lrpr\Scripts\python.exe -m pytest -q
-   ```
-
-4. Have a fresh reviewer inspect the Tk migration, especially:
-   - no UI access from the worker thread
-   - queue polling and scalar progress snapshots
-   - cancellation and close-during-run behavior
-   - no non-daemon worker left behind
-   - startup/preflight exception cleanup
-   - exact zero-preview progress behavior
-   - output/report buttons gated by path existence
-5. Rework packaging as PyInstaller **onedir**, not onefile.
-6. Exclude PySide6, Shiboken6, Qt, and other unused frameworks completely.
-7. Make `scripts\build.ps1` portable:
-   - accept a `-Python` parameter
-   - support an environment override
-   - fall back to a project `.venv`
-   - delete/recreate only the exact build/staging directories
-8. Inventory every redistributed native library. Include exact project,
-   Python, Tcl/Tk, PyInstaller, and any actually bundled third-party notices.
-   Remove all obsolete Qt notices.
-9. Make `scripts\verify-package.ps1` fail closed on unexpected package files,
-   source-backup names/data, failed startup, or unclean shutdown.
-10. Build a new ZIP and run the packaged GUI smoke test:
-    - select the supplied catalog and preview cache
-    - confirm preflight reports 8,099 / 8,099
-    - write only under `work\smoke-output`
-    - stop after at most three records
-    - compare report counters with recovered files
-11. Re-run the live-source immutability proof.
-12. Obtain a fresh final code/package review before claiming completion.
+The former one-file PySide6 build in `outputs\Lightroom-Preview-Recovery-Windows.zip`
+has been replaced by the fresh onedir build described above.
 
 ## Test environment
 

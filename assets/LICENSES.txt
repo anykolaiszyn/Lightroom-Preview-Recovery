@@ -1,0 +1,50 @@
+Lightroom Preview Recovery — notices
+====================================
+
+Project license
+---------------
+Copyright (c) 2026 Lightroom Preview Recovery contributors
+
+This project is licensed under the MIT License. The complete project license
+is included in LICENSE.
+
+Python 3.12.10
+--------------
+This package includes Python components licensed by the Python Software
+Foundation under the Python Software Foundation License Version 2. The complete
+license text from the installed Python distribution is included in
+licenses/Python-3.12-LICENSE.txt.
+
+https://www.python.org/psf/license/
+
+Tcl/Tk 8.6
+----------
+This package includes Tcl/Tk runtime components used by the standard-library
+Tkinter user interface. The complete local Tcl/Tk license text is included in
+licenses/TclTk-8.6-license.terms.
+
+https://www.tcl.tk/software/tcltk/license.html
+
+OpenSSL 3
+---------
+This package includes OpenSSL runtime components used by the bundled Python
+runtime. The complete Apache License 2.0 text distributed with the local
+OpenSSL installation is included in licenses/OpenSSL-3.0-LICENSE.txt.
+
+https://www.openssl.org/source/license.html
+
+PyInstaller 6.21.0
+------------------
+PyInstaller is licensed under GPL version 2 or later with its bootloader
+exception. The exception permits linking or embedding the compiled bootloader
+and related files into other programs and distributing the resulting combined
+executable without restrictions arising from that linking or embedding. The
+complete upstream notice, exception, GPL version 2 text, and included runtime
+hook notices are included in licenses/PyInstaller-COPYING.txt.
+
+https://pyinstaller.org/en/stable/operating-mode.html#what-pyinstaller-bundles
+https://github.com/pyinstaller/pyinstaller/blob/develop/COPYING.txt
+
+Copies of these license texts are supplied with this archive so it can be used
+offline. Third-party rights are governed by their respective license texts, not
+by this summary.

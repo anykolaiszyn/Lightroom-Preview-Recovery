@@ -12,3 +12,4 @@ Recovered Lightroom Previews/
 .superpowers/
 .worktrees/
 outputs/
+*.egg-info/
