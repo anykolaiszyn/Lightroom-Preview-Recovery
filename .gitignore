@@ -10,4 +10,5 @@ work/
 *.lrdata/
 Recovered Lightroom Previews/
 .superpowers/
+.worktrees/
 outputs/
