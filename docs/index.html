@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lightroom Preview Recovery</title>
+<meta name="description" content="Recover Lightroom photos when the originals are gone. Extract the cached JPEG previews from a Lightroom Catalog Previews.lrdata folder and .lrcat file — free, read-only, Windows app.">
+<link rel="canonical" href="https://anykolaiszyn.github.io/Lightroom-Preview-Recovery/">
+
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Lightroom Preview Recovery">
+<meta property="og:description" content="Recover Lightroom photos when the originals are gone. Extract the cached JPEG previews from a Lightroom Catalog Previews.lrdata folder and .lrcat file — free, read-only, Windows app.">
+<meta property="og:url" content="https://anykolaiszyn.github.io/Lightroom-Preview-Recovery/">
+<meta property="og:site_name" content="Lightroom Preview Recovery">
+
+<!-- Twitter -->
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Lightroom Preview Recovery">
+<meta name="twitter:description" content="Recover Lightroom photos when the originals are gone — free, read-only, Windows app.">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Lightroom Preview Recovery",
+  "operatingSystem": "Windows",
+  "applicationCategory": "PhotoEditingApplication",
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "USD"
+  },
+  "downloadUrl": "https://github.com/anykolaiszyn/Lightroom-Preview-Recovery/releases/latest",
+  "license": "https://github.com/anykolaiszyn/Lightroom-Preview-Recovery/blob/main/assets/LICENSE"
+}
+</script>
+
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #ffffff;
+    --fg: #1a1a1a;
+    --muted: #555555;
+    --accent: #2a5db0;
+    --accent-fg: #ffffff;
+    --border: #dddddd;
+    --card: #f6f7f9;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14161a;
+      --fg: #eaeaea;
+      --muted: #b0b3b8;
+      --accent: #6ea0ff;
+      --accent-fg: #0b1220;
+      --border: #33363c;
+      --card: #1d2025;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.55;
+    padding: 0 16px;
+  }
+  main {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 40px 0 64px;
+  }
+  h1 {
+    font-size: 1.9rem;
+    margin-bottom: 0.3em;
+  }
+  h2 {
+    font-size: 1.3rem;
+    margin-top: 2.2em;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 0.3em;
+  }
+  p.lede {
+    font-size: 1.1rem;
+    color: var(--muted);
+  }
+  .cta {
+    display: inline-block;
+    margin: 1.3em 0;
+    padding: 0.85em 1.6em;
+    background: var(--accent);
+    color: var(--accent-fg);
+    text-decoration: none;
+    font-weight: 600;
+    border-radius: 8px;
+    font-size: 1.05rem;
+  }
+  .cta:hover, .cta:focus { opacity: 0.9; }
+  .note {
+    font-size: 0.9rem;
+    color: var(--muted);
+  }
+  ol, ul {
+    padding-left: 1.3em;
+  }
+  li { margin-bottom: 0.5em; }
+  .faq dt {
+    font-weight: 600;
+    margin-top: 1.1em;
+  }
+  .faq dd {
+    margin: 0.3em 0 0 0;
+    color: var(--muted);
+  }
+  code {
+    background: var(--card);
+    padding: 0.15em 0.4em;
+    border-radius: 4px;
+    font-size: 0.92em;
+  }
+  footer {
+    margin-top: 3em;
+    padding-top: 1.5em;
+    border-top: 1px solid var(--border);
+    font-size: 0.9rem;
+    color: var(--muted);
+  }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Lightroom Preview Recovery</h1>
+  <p class="lede">
+    Recover photos from an old Adobe Lightroom catalog when the original RAW,
+    JPEG, or TIFF files are gone. This free Windows app reads Lightroom's own
+    cached preview JPEGs — stored in the
+    <code>Lightroom Catalog Previews.lrdata</code> folder next to your
+    <code>.lrcat</code> catalog — and saves them as normal image files, with
+    your original folder structure and filenames intact.
+  </p>
+
+  <a class="cta" href="https://github.com/anykolaiszyn/Lightroom-Preview-Recovery/releases/latest">Download for Windows</a>
+  <p class="note">Free. No install, no Python, no Lightroom required. Unzip and run.</p>
+
+  <h2>How it works</h2>
+  <ol>
+    <li>Find your <code>.lrcat</code> catalog file and the matching
+      <code>Lightroom Catalog Previews.lrdata</code> folder sitting next to it
+      on your backup.</li>
+    <li>Open the app and point it at both — the catalog file and the preview
+      folder.</li>
+    <li>Choose a new, empty destination folder (not inside the catalog or
+      preview folder).</li>
+    <li>Click Start recovery. The app finds the best cached copy of each photo
+      and copies it out as a JPEG.</li>
+    <li>Review the recovered files, plus a full HTML/CSV/log report of what
+      was recovered, skipped, or unreadable.</li>
+  </ol>
+
+  <h2>Frequently asked questions</h2>
+  <dl class="faq">
+    <dt>Can I recover my original RAW files?</dt>
+    <dd>No. This tool only recovers the JPEG previews Lightroom already
+      rendered and cached — not your original RAW/JPEG/TIFF/PSD files. Preview
+      quality is whatever Lightroom happened to cache: usually good enough to
+      recognize and use in a pinch, but not a substitute for the original
+      file.</dd>
+
+    <dt>Is it safe to run against my old backup?</dt>
+    <dd>Yes. Your catalog and preview cache are opened read-only and are never
+      modified. The app only ever writes to a separate destination folder you
+      choose.</dd>
+
+    <dt>Do I need Lightroom installed?</dt>
+    <dd>No. The app reads the catalog and preview files directly; Lightroom
+      does not need to be installed or running.</dd>
+
+    <dt>What if it stops partway through, or I want to add more later?</dt>
+    <dd>Just run it again with the same catalog, preview folder, and
+      destination. Already-recovered photos are checked and left alone — only
+      what's missing gets processed. Nothing is overwritten or duplicated.</dd>
+
+    <dt>Why does Windows show a SmartScreen warning?</dt>
+    <dd>The app isn't code-signed (that costs money for a solo open-source
+      project). If you downloaded it from the GitHub releases page, click
+      "More info → Run anyway." The source code is public on GitHub.</dd>
+  </dl>
+
+  <footer>
+    <p>
+      Open source (MIT license) on
+      <a href="https://github.com/anykolaiszyn/Lightroom-Preview-Recovery">GitHub</a>.
+    </p>
+  </footer>
+</main>
+</body>
+</html>
